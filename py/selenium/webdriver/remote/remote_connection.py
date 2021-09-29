@@ -16,6 +16,7 @@
 # under the License.
 
 import logging
+import re
 import socket
 import string
 
@@ -47,6 +48,7 @@ class RemoteConnection(object):
     browser_name = None
     _timeout = socket._GLOBAL_DEFAULT_TIMEOUT
     _ca_certs = certifi.where()
+    _redirects = None
 
     @classmethod
     def get_timeout(cls):
@@ -124,6 +126,33 @@ class RemoteConnection(object):
             })
 
         return headers
+    
+    @classmethod
+    def _get_redirects(cls):
+        """
+        Get the number of redirects.
+
+        :Returns:
+            The max. number of allowed redirects to a request, or None if no redirects is set.
+        """
+        return cls._redirects
+    
+    @classmethod
+    def _set_redirects(cls, num):
+        """
+        Set the max. number of allowed redirects
+
+        :Args:
+            num - the number of redirects to allow
+        """
+        cls._redirects = num
+    
+    @classmethod
+    def _reset_redirects(cls):
+        """
+        Reset redirects to its default state.
+        """
+        cls._redirects = None
 
     def _get_proxy_url(self):
         if self._url.startswith('https://'):
@@ -413,16 +442,18 @@ class RemoteConnection(object):
         parsed_url = parse.urlparse(url)
         headers = self.get_remote_connection_headers(parsed_url, self.keep_alive)
         resp = None
+        retries = urllib3.Retry(redirect=self._redirects)
+
         if body and method != 'POST' and method != 'PUT':
             body = None
 
         if self.keep_alive:
-            resp = self._conn.request(method, url, body=body, headers=headers)
+            resp = self._conn.request(method, url, body=body, headers=headers, retries=retries)
             statuscode = resp.status
         else:
             conn = self._get_connection_manager()
             with conn as http:
-                resp = http.request(method, url, body=body, headers=headers)
+                resp = http.request(method, url, body=body, headers=headers, retries=retries)
 
             statuscode = resp.status
             if not hasattr(resp, 'getheader'):
